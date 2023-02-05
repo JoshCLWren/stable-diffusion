@@ -183,13 +183,13 @@ def main():
     parser.add_argument(
         "--config",
         type=str,
-        default="configs/stable-diffusion/v1-inference.yaml",
+        default="configs/stable-diffusion-v1/v1-inference.yaml",
         help="path to config which constructs model",
     )
     parser.add_argument(
         "--ckpt",
         type=str,
-        default="models/ldm/stable-diffusion-v1/model.ckpt",
+        default="models/ldm/stable-diffusion-v1-v1/model.ckpt",
         help="path to checkpoint of model",
     )
     parser.add_argument(
