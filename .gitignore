@@ -170,3 +170,14 @@
 ./outputs/txt2img-samples/image_logan_image_113.png
 ./outputs/txt2img-samples/image_logan_image_81.png
 ./outputs/txt2img-samples/"A)_Run_away_from_the_creature".png
+/storyboard/audio/
+/storyboard/video/
+/outputs/
+/assets/
+/configs/
+/data/
+/ldm/
+/models/
+/models/first_stage_models/
+/models/ldm/
+/outputs/
