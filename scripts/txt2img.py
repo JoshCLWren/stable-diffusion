@@ -34,9 +34,9 @@ from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionS
 from transformers import AutoFeatureExtractor
 
 # load safety model
-safety_model_id = "CompVis/stable-diffusion-v1-safety-checker"
-safety_feature_extractor = AutoFeatureExtractor.from_pretrained(safety_model_id)
-safety_checker = StableDiffusionSafetyChecker.from_pretrained(safety_model_id)
+# safety_model_id = "CompVis/stable-diffusion-v1-safety-checker"
+# safety_feature_extractor = AutoFeatureExtractor.from_pretrained(safety_model_id)
+# safety_checker = StableDiffusionSafetyChecker.from_pretrained(safety_model_id)
 
 
 def chunk(it, size):
@@ -221,13 +221,13 @@ def main(opt=None):
         parser.add_argument(
             "--config",
             type=str,
-            default="configs/stable-diffusion-v1/v1-inference.yaml",
+            default="configs/stable-diffusion/v1-inference.yaml",
             help="path to config which constructs model",
         )
         parser.add_argument(
             "--ckpt",
             type=str,
-            default="models/ldm/stable-diffusion-v1-v1/model.ckpt",
+            default="models/ldm/stable-diffusion-v1/model.ckpt",
             help="path to checkpoint of model",
         )
         parser.add_argument(
@@ -379,5 +379,4 @@ def make_image(opt):
 
 
 if __name__ == "__main__":
-    breakpoint()
     main()

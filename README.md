@@ -285,7 +285,7 @@ from torch import autocast
 from diffusers import StableDiffusionPipeline
 
 pipe = StableDiffusionPipeline.from_pretrained(
-	"CompVis/stable-diffusion-v1-v1-4", 
+	"CompVis/stable-diffusion-v1-4", 
 	use_auth_token=True
 ).to("cuda")
 

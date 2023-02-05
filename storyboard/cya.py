@@ -68,7 +68,7 @@ class Story:
         story_dict = [{"text": line} for line in story if len(line) > 0 or line != b""]
         # remove any dictionaries that look like {"text": ""} or
         story_dict = [line for line in story_dict if line["text"] != ""]
-        story_dict.append({"file_prefix": file_prefix, "file_path": file_path})
+        story_dict.append({"file_prefix": self.file_prefix, "file_path": self.file_path})
         # print("Caching story")
         # cache_story(story_dict)
         print("Text parsed")
@@ -268,7 +268,7 @@ class Story:
                     "1",
                     "--plms",
                     "--name",
-                    f"logan_image_{line_index}",
+                    f"{self.file_prefix}_image_{line_index}",
                 ]
             )
         except Exception as e:
@@ -337,9 +337,13 @@ class Story:
         # Get a list of all the video files in the directory
         import re
         video_directory = f"storyboard/video/{self.file_prefix}/"
+        output_path = f"storyboard/final_video/{self.file_prefix}"
         output_file = f"storyboard/final_video/{self.file_prefix}/final_video.mp4"
         video_files = [f for f in os.listdir(video_directory) if f.endswith(".mp4")]
         # ensure that the files are in order from storyboard/video/0.mp4 to n and retain the order and path
+        # create the final video directory if it doesn't exist
+        if not os.path.exists(output_path):
+            os.makedirs(output_path)
 
         video_files = sorted(
             video_files, key=lambda x: int(re.search(r"\d+", x).group())
