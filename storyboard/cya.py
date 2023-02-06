@@ -4,17 +4,22 @@ audio for each line, and a video of the images and audio.
 """
 
 import contextlib
+import json
 import os
+import shutil
 import subprocess
-from gtts import gTTS
-import scripts
 import time
+from dataclasses import dataclass
+
+import arrow
+import av
+import torch
+from gtts import gTTS
 from moviepy.editor import *
 from PIL import Image, ImageDraw, ImageFont
-import shutil
-import av
-from dataclasses import dataclass
-import arrow
+from transformers import BartForConditionalGeneration, BartTokenizer
+
+import scripts
 
 
 @dataclass
@@ -28,6 +33,8 @@ class Story:
     file_path: str
     file_prefix: str
     art_style: str
+    end_time: str = None
+    start_time: str = arrow.now()
     text: str = None
     story_dict: list = None
 
@@ -44,33 +51,29 @@ class Story:
         Example:
             [{'text': 'This is the first line.'}, {'text': 'This is the second line.'}]
         """
-        # check if a cached story exists
-        # if it does, return it
-        # if not, get the text file and return it
-        # import json
-        # with contextlib.suppress(json.JSONDecodeError):
-        #     if os.path.exists("storyboard/story.json"):
-        #         # ensure the story is not empty
-        #         with open("storyboard/story.json", "r") as story:
-        #             story_dict = json.load(story)
-        #         if story_dict:
-        #             return story_dict
 
+        paraphrase_model = Paraphraser()
         print(f"Getting text from {self.file_path}")
         with open(self.file_path, "r") as text:
             story = [
                 line[:-1]
                 for line in text
                 if not line.startswith("The AI response returned in")
-                   and line not in ["", " "]
+                and line not in ["", " "]
             ]
 
-        story_dict = [{"text": line} for line in story if len(line) > 0 or line != b""]
+        story_dict = [
+            paraphrase({"text": line}, paraphrase_model)
+            for line in story
+            if len(line) > 0 or line != b""
+        ]
         # remove any dictionaries that look like {"text": ""} or
         story_dict = [line for line in story_dict if line["text"] != ""]
-        story_dict.append({"file_prefix": self.file_prefix, "file_path": self.file_path})
-        # print("Caching story")
-        # cache_story(story_dict)
+        story_dict.append(
+            {"file_prefix": self.file_prefix, "file_path": self.file_path}
+        )
+        print("Caching story")
+        self.cache_story()
         print("Text parsed")
         self.text = story
         self.story_dict = story_dict
@@ -105,7 +108,9 @@ class Story:
                 print(f"Skipping {line} as there is no audio file for this index")
             if not self.ignore_cache:
                 print(f"Checking for audio file for line {index}")
-                if os.path.exists(f"storyboard/audio/{self.file_prefix}/audio_{index}.mp3"):
+                if os.path.exists(
+                    f"storyboard/audio/{self.file_prefix}/audio_{index}.mp3"
+                ):
                     print(f"Audio file for line {index} found")
                     line["audio"] = f"audio_{index}.mp3"
                     continue
@@ -128,8 +133,6 @@ class Story:
         Returns:
             None
         """
-        import json
-        import arrow
 
         print("let's cache this story")
         self.cache_path = f"storyboard/cache/{self.file_prefix}.json"
@@ -176,7 +179,7 @@ class Story:
             if not self.ignore_cache:
                 print(f"Checking for image file for line {index}")
                 if os.path.exists(
-                        f"outputs/txt2img-samples/image_{self.file_prefix}_image_{index}.png"
+                    f"outputs/txt2img-samples/image_{self.file_prefix}_image_{index}.png"
                 ):
                     print(f"Image file for line {index} found")
                     line[
@@ -310,22 +313,23 @@ class Story:
                     continue
             try:
                 try:
-                    audio_clip = AudioFileClip(f"storyboard/audio/{self.file_prefix}/{line['audio']}")
+                    audio_clip = AudioFileClip(
+                        f"storyboard/audio/{self.file_prefix}/{line['audio']}"
+                    )
                 except Exception as e:
                     audio_clip = AudioFileClip(line["audio"])
                 image_clip = ImageClip(
                     line["image"], duration=audio_clip.duration
                 ).set_audio(audio_clip)
-                image_clip.write_videofile(f"storyboard/video/{self.file_prefix}/{index}.mp4", fps=24)
+                image_clip.write_videofile(
+                    f"storyboard/video/{self.file_prefix}/{index}.mp4", fps=24
+                )
             except Exception as e:
                 print(e)
                 continue
         self.cache_story()
 
-    def concatenate_videos(
-            self
-
-    ):
+    def concatenate_videos(self):
         """
         This function concatenates all the videos into one final video.
         Args:
@@ -336,6 +340,7 @@ class Story:
         """
         # Get a list of all the video files in the directory
         import re
+
         video_directory = f"storyboard/video/{self.file_prefix}/"
         output_path = f"storyboard/final_video/{self.file_prefix}"
         output_file = f"storyboard/final_video/{self.file_prefix}/final_video.mp4"
@@ -366,12 +371,43 @@ class Story:
         Returns:
             bool
         """
-        breakpoint()
         return bool(
-            os.path.exists(
-                f"storyboard/final_video/{self.file_prefix}/final_video.mp4"
-            )
+            os.path.exists(f"storyboard/final_video/{self.file_prefix}/final_video.mp4")
         )
+
+
+@dataclass()
+class Paraphraser:
+    model = BartForConditionalGeneration.from_pretrained("eugenesiow/bart-paraphrase")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = model.to(device)
+    tokenizer = BartTokenizer.from_pretrained("eugenesiow/bart-paraphrase")
+
+
+def paraphrase(text_input: dict, paraphraser_model):
+    """
+    Takes a sentence and sums it up into a more cohesive idea using the BartForConditionalGeneration model.
+    Args:
+        text_input:a dict with a "text" key
+        paraphraser_model: an instance of a Paraphraser
+
+    Returns:
+        the first index of the generated string
+    """
+    # split the text_input into seperate sentences and paraprhase each
+    parapraph_split = text_input["text"].split(".")
+
+    output = []
+    for sentence in parapraph_split:
+        print(f"Attempting to paraphrase: {sentence}")
+        batch = paraphraser_model.tokenizer(sentence, return_tensors="pt")
+        generated_ids = paraphraser_model.model.generate(batch["input_ids"])
+        generated_sentence = paraphraser_model.tokenizer.batch_decode(
+            generated_ids, skip_special_tokens=True
+        )[0]
+        print(f"Paraphrased sentence: {sentence}")
+        output.append(sentence)
+    return {"text": "".join(output)}
 
 
 if __name__ == "__main__":
@@ -388,7 +424,9 @@ if __name__ == "__main__":
     if not os.path.exists(file_path):
         print("File not found")
         exit()
-    art_style = input("Enter art style or press enter to use default style of Greg Rutkowski")
+    art_style = input(
+        "Enter art style or press enter to use default style of Greg Rutkowski"
+    )
     if not art_style:
         art_style = "Greg Rutkowski"
     story = Story(file_path, file_prefix, art_style)
@@ -411,3 +449,8 @@ if __name__ == "__main__":
     story.generate_video()
     print("Generating final video...")
     story.concatenate_videos()
+    story.end_time = arrow.now()
+    elapsed_time = story.end_time - story.start_time
+    print(
+        f"Job took: {elapsed_time.total_seconds()} seconds or {elapsed_time.total_seconds()/60} minutes"
+    )
