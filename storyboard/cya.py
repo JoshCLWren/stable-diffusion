@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import time
 from dataclasses import dataclass
-
+import random
 import arrow
 import av
 import torch
@@ -18,8 +18,71 @@ from gtts import gTTS
 from moviepy.editor import *
 from PIL import Image, ImageDraw, ImageFont
 from transformers import BartForConditionalGeneration, BartTokenizer
-
+from uuid import uuid4
 import scripts
+
+
+@dataclass
+class ImageOptions:
+    """
+    This class stores different options and styles that are available to add to an image prompt.
+    """
+
+    genres = random.choice(["stuff"])
+    artists = random.choice(["stuff"])
+    adjectives = random.choice(["stuff"])
+    trends: str = "trending on artstation and unreal engine"
+    seed: int = random.randint(1, 1000000)
+
+    def set_options(self):
+        """
+
+        Returns:
+
+        """
+        return f"{self.genres}, {self.artists}, {self.adjectives}, {self.trends}"
+
+
+@dataclass
+class Photography:
+    """
+    This class stores different Photography Enums to add to an image prompt.
+    """
+    shot_type = random.choice(("close-up", "extreme close-up", "POV", "medium close-up", "medium shot", "long shot"))
+    style = random.choice(("polaroid", "Monochrome", "Long Exposure", "Color Splash", "Long Shot"))
+    lighting = random.choice(("soft", "ambient", "Ring", "Sun", "Cinematic"))
+    lens = random.choice(("Wide-Angle", "Telephotot", "24mm", "EF 70mm", "Bokeh", "Macro"))
+    device = random.choice(("iPhone X", "CCTV", "Nikon Z FX", "Canon", "Gopro"))
+
+    def set_photography(self):
+        """
+        A method that returns the randomly  generated string from the class's attributes.
+        Args:
+            self
+        Returns:
+            photography_string
+        """
+        return f"{self.shot_type} {self.style} {self.lighting} {self.lens} {self.device}"
+
+
+@dataclass
+class GlobalPrompt:
+    """
+    The Global image Prompt class
+    """
+    photography_string: str = Photography().set_photography()
+    artist: str = input(
+        "Enter an artist or press enter to use the default of Van Gogh"
+    ) or "Van Gogh"
+    art_medium = random.choice(
+        ["chalk", "graffiti", "water colors", "oil paints", "cinematic", "4k", "hyper realistic", "12k", "fabric",
+         "pencil drawing", "wood", "clay"])
+
+    def global_prompt_prefix(self):
+        return f"A {self.art_medium} in the style of {self.artist}"
+
+    def global_prompt_suffix(self):
+        return f"with a {self.photography_string} photography style"
 
 
 @dataclass
@@ -31,8 +94,9 @@ class Story:
     """
 
     file_path: str
-    file_prefix: str
-    art_style: str
+    global_prompt = GlobalPrompt()
+    id = uuid4()
+    file_prefix = id
     end_time: str = None
     start_time: str = arrow.now()
     text: str = None
@@ -42,6 +106,18 @@ class Story:
     cache_path: str = "storyboard/cache/"
     last_updated = arrow.now().isoformat()
     ignore_cache = False
+    global_prompt_prefix = global_prompt.global_prompt_prefix()
+    global_prompt_suffix = global_prompt.global_prompt_suffix()
+
+    def __post_init__(self):
+        self.file_prefix = f"{self.id}_{self.file_prefix}"
+        print(f"story id for debugging purposes: {self.id}")
+        prefix_approval = input(f"Are you ok with this prompt prefix: {self.global_prompt_prefix}?")
+        if prefix_approval.lower().startswith("n"):
+            self.global_prompt_prefix = input("Enter your own prefix: ")
+        suffix_approval = input(f"Ok, but what about this suffix: {self.global_prompt_suffix}?")
+        if suffix_approval.lower().startswith("n"):
+            self.global_prompt_suffix = input("Enter your own suffix: ")
 
     def get_text(self):
         """
@@ -59,7 +135,7 @@ class Story:
                 line[:-1]
                 for line in text
                 if not line.startswith("The AI response returned in")
-                and line not in ["", " "]
+                   and line not in ["", " "]
             ]
 
         story_dict = [
@@ -104,12 +180,12 @@ class Story:
             # if it does, skip it
             # if not, generate the audio file
             # skip the last modified key
-            if not line.get("audio"):
-                print(f"Skipping {line} as there is no audio file for this index")
+            if not line.get("text"):
+                print(f"Skipping {line} as there is no text for this index")
             if not self.ignore_cache:
                 print(f"Checking for audio file for line {index}")
                 if os.path.exists(
-                    f"storyboard/audio/{self.file_prefix}/audio_{index}.mp3"
+                        f"storyboard/audio/{self.file_prefix}/audio_{index}.mp3"
                 ):
                     print(f"Audio file for line {index} found")
                     line["audio"] = f"audio_{index}.mp3"
@@ -179,7 +255,7 @@ class Story:
             if not self.ignore_cache:
                 print(f"Checking for image file for line {index}")
                 if os.path.exists(
-                    f"outputs/txt2img-samples/image_{self.file_prefix}_image_{index}.png"
+                        f"outputs/txt2img-samples/image_{self.file_prefix}_image_{index}.png"
                 ):
                     print(f"Image file for line {index} found")
                     line[
@@ -190,7 +266,7 @@ class Story:
                 print(f"Image file for line {index} not found, generating it")
                 # run the txt2img.py script with the line text as the prompt
                 filename = self.generate_path_from_script(
-                    f'{line["text"]}, {self.art_style} art style'.replace(":", " "),
+                    f'{line["text"]}'.replace(":", " "),
                     index,
                 )
                 line[
@@ -257,14 +333,15 @@ class Story:
             the path to the image file generated by the script
         """
         script_file = "scripts/txt2img.py"
-        print(f"Running {script_file} with {text}")
+        prompt = f"{self.global_prompt_prefix}, {text} {self.global_prompt_suffix}"
+        print(f"Running {script_file} with {prompt}")
         try:
             subprocess.run(
                 [
                     "python",
                     script_file,
                     "--prompt",
-                    text,
+                    prompt,
                     "--n_samples",
                     "1",
                     "--n_iter",
@@ -276,7 +353,7 @@ class Story:
             )
         except Exception as e:
             print(e)
-            print(f"Image file for {text} could not be generated")
+            print(f"Image file for {line_index} could not be generated")
             return None
         return (
             f"outputs/txt2img-samples/image_{self.file_prefix}_image_{line_index}.png"
@@ -376,7 +453,7 @@ class Story:
         )
 
 
-@dataclass()
+@dataclass
 class Paraphraser:
     model = BartForConditionalGeneration.from_pretrained("eugenesiow/bart-paraphrase")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -410,35 +487,7 @@ def paraphrase(text_input: dict, paraphraser_model):
     return {"text": "".join(output)}
 
 
-if __name__ == "__main__":
-    print("Enter txt file path or press enter to use default file")
-    default_file = (
-        "storyboard/stories/Logans_Horror_Thriller_story_2022-09-04T10:29:14.971905.txt"
-    )
-    file_path = input()
-    file_prefix = "logan"
-    if not file_path:
-        file_path = default_file
-    else:
-        file_prefix = file_path.split("/")[-1].split(".")[0].split("_")[0]
-    if not os.path.exists(file_path):
-        print("File not found")
-        exit()
-    art_style = input(
-        "Enter art style or press enter to use default style of Greg Rutkowski"
-    )
-    if not art_style:
-        art_style = "Greg Rutkowski"
-    story = Story(file_path, file_prefix, art_style)
-    if final_video := story.check_if_final_video_exists():
-        print("Final video found, do you want to regenerate it?")
-        regenerate = input("Enter y or n")
-        if regenerate.lower().startswith("n"):
-            print("Exiting")
-            exit()
-        else:
-            story.ignore_cache = True
-
+def initiate_story(story):
     print("Getting text...")
     story.get_text()
     print("Generating audio...")
@@ -452,5 +501,41 @@ if __name__ == "__main__":
     story.end_time = arrow.now()
     elapsed_time = story.end_time - story.start_time
     print(
-        f"Job took: {elapsed_time.total_seconds()} seconds or {elapsed_time.total_seconds()/60} minutes"
+        f"Job took: {elapsed_time.total_seconds()} seconds or {elapsed_time.total_seconds() / 60} minutes"
     )
+    print(story.id)
+
+
+def user_input():
+    """
+    Wherein the user inputs their options.
+    Returns:
+        Void
+    """
+    print("Enter txt file path or press enter to use default file")
+    file_path = input()
+    if not file_path:
+        default_file = "sample.txt"
+        file_path = default_file
+    if not os.path.exists(file_path):
+        print("File not found")
+        exit()
+    users_story = Story(file_path)
+    if users_story.check_if_final_video_exists():
+        print("Final video found, do you want to regenerate it?")
+        regenerate = input("Enter y or n")
+        if regenerate.lower().startswith("n"):
+            print("Exiting")
+            exit()
+        else:
+            users_story.ignore_cache = True
+    return users_story
+
+
+if __name__ == "__main__":
+    try:
+        story = user_input()
+        initiate_story(story)
+    except KeyboardInterrupt:
+        print("Exiting...")
+        exit()
