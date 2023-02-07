@@ -439,6 +439,8 @@ class Story:
         # Use FFmpeg to combine the videos using the concat demuxer
         command = f"ffmpeg -f concat -safe 0 -i {concat_file} -c copy {output_file}"
         os.system(command)
+        # delete the concat demuxer file
+        os.remove(concat_file)
 
     def check_if_final_video_exists(self):
         """
